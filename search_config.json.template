@@ -1,0 +1,10 @@
+{
+    "api-key": "auywksd31asdnj9cds3j65ka",
+    "search": {
+        "from": "BCN",
+        "to": "AMS",
+        "return": true,
+        "outboundDate": null, // null equals to today
+        "inboundDate": "2055-12-31"
+    }
+}

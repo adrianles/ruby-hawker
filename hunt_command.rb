@@ -2,27 +2,25 @@ require 'thor'
 require 'httparty'
 require 'json'
 require 'date'
+require_relative 'config_definition'
 
 class HuntCommand < Thor
   desc 'hunt', 'The hawker hunts its prey'
-
-  # @see https://developer.airfranceklm.com/products/api/offers/api-reference/
-  @url = 'https://api.airfranceklm.com/opendata/offers/v1/available-offers' # TODO: get from config
 
   def hunt
     puts 'Preparing the search...'
 
     load_config
 
-    get_outbound_date
+    load_outbound_date
     puts "Searching from #{@outboundDate}"
 
-    if @config['search']['return']
-      puts 'Searching form return tickets'
-      get_inbound_date
+    if @config[ConfigDefinition::SEARCH][ConfigDefinition::SEARCH_IS_RETURN]
+      puts 'Searching for return tickets'
+      load_inbound_date
       puts "Searching until #{@inboundDate}"
     else
-      puts 'Searching form single tickets'
+      puts 'Searching for single tickets'
     end
 
     # request_data
@@ -43,9 +41,9 @@ class HuntCommand < Thor
     end
   end
 
-  def get_outbound_date
+  def load_outbound_date
     begin
-      configOutboundDate = @config['search']['inboundDate']
+      configOutboundDate = @config[ConfigDefinition::SEARCH][ConfigDefinition::SEARCH_OUTBOUND_DATE]
       if configOutboundDate == nil
         @outboundDate = Date.today
       else
@@ -56,9 +54,9 @@ class HuntCommand < Thor
     end
   end
 
-  def get_inbound_date
+  def load_inbound_date
     latestDate = Date.today >> 11  # Add 11 months
-    configInboundDate = @config['search']['inboundDate']
+    configInboundDate = @config[ConfigDefinition::SEARCH][ConfigDefinition::SEARCH_INBOUND_DATE]
     begin
       if configInboundDate == nil
         @inboundDate = latestDate
@@ -66,29 +64,52 @@ class HuntCommand < Thor
         @inboundDate = [latestDate, Date.strptime(configInboundDate, '%Y-%m-%d')].min
       end
     rescue => exception
-      abort "Invalid outbound date: #{exception.message}"
+      abort "Invalid inbound date: #{exception.message}"
     end
   end
 
   def request_data
     @response = HTTParty.post(
-      url,
-      :headers => { 
-        # 'AFKL-TRAVEL-Host' => 'KL',
-        'API-Key' => @config['api-key'],
-        'Accept' => 'application/hal+json',
-        'Content-Type' => 'application/hal+json'
-      },
-      :data => {
-        'commercialCabins' => ['ALL'],
-        'bookingFlow' => 'LEISURE',
-        'passengers' => [{'id': 1, 'type': 'ADT'}],
-        'requestedConnections': [
-            create_flight_connection(@outboundDate, searchConfig['from'], searchConfig['to']),
-            create_flight_connection(@inboundDate, searchConfig['to'], searchConfig['from']),
-        ]
-      }
+      # @see https://developer.airfranceklm.com/products/api/offers/api-reference/
+      'https://api.airfranceklm.com/opendata/offers/v1/available-offers',
+      headers: get_request_headers,
+      body: get_request_body.to_json
     )
+  end
+
+  def get_request_headers
+    return {
+      # 'AFKL-TRAVEL-Host' => 'KL or AF',
+      'API-Key' => @config[ConfigDefinition::API_KEY],
+      'Accept' => 'application/hal+json',
+      'Content-Type' => 'application/hal+json'
+    }
+  end
+
+  def get_request_body
+    search_config = @config[ConfigDefinition::SEARCH]
+
+    requested_conections = [
+      create_flight_connection(
+        @outbound_date,
+        @search_config[ConfigDefinition::SEARCH_ORIGIN],
+        @search_config[ConfigDefinition::SEARCH_DESTINATION]
+      )
+    ]
+    if search_config[ConfigDefinition::SEARCH_IS_RETURN]
+      create_flight_connection(
+        @inbound_date,
+        @search_config[ConfigDefinition::SEARCH_DESTINATION],
+        @search_config[ConfigDefinition::SEARCH_ORIGIN]
+      )
+    end
+
+    return {
+      commercialCabins: ['ALL'],
+      bookingFlow: 'LEISURE',
+      passengers: [{ id: 1, type: 'ADT' }],
+      requestedConnections: requested_conections
+    }
   end
 
   def create_flight_connection(date, origin, destination)

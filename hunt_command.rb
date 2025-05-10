@@ -29,6 +29,9 @@ class HuntCommand < Thor
 
     handle_response
 
+    format_data
+
+    puts "Search completed"
   rescue => exception
     puts "An error occurred: #{exception.message}"
   end
@@ -71,6 +74,7 @@ class HuntCommand < Thor
   end
 
   def request_data
+    @timestamp = Time.now
     begin
       @response = HTTParty.post(
         # @see https://developer.airfranceklm.com/products/api/offers/api-reference/
@@ -134,16 +138,18 @@ class HuntCommand < Thor
   end
 
   def handle_response
-    puts 'handling the response'
     if @response.code == 200
-      # data = JSON.parse(response.body)
-
-      File.write("output.txt", @response.body)
-      puts "Done! Result written to output.txt"
+      file_path = "data/response/#{@timestamp}.json"
+      File.write(file_path, @response.body)
+      puts "Response written to #{file_path}"
     else
       puts "Error: Response failed with code #{@response.code}"
-      puts @response.body
+      abort @response.body
     end
+  end
+
+  def format_data
+    # data = JSON.parse(response.body)
   end
 end
 

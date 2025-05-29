@@ -2,34 +2,62 @@ require 'thor'
 require 'httparty'
 require 'json'
 require 'date'
+
 require_relative 'config_definition'
+require_relative 'applicant'
 
 class HuntCommand < Thor
   desc 'hunt', 'The hawker hunts its prey'
 
-  API_DATE_FORMAT = '%Y-%m-%d';
+  OUTPUT_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
   def hunt
     puts 'Preparing the search...'
 
+    skip_request = false
+
     load_config
+    search_config = @config[ConfigDefinition::SEARCH]
 
-    load_outbound_date
-    puts "Searching from #{@outbound_date}"
+    origin = search_config[ConfigDefinition::SEARCH_ORIGIN]
+    destination = search_config[ConfigDefinition::SEARCH_DESTINATION]
 
-    if @config[ConfigDefinition::SEARCH][ConfigDefinition::SEARCH_IS_RETURN]
+    outbound_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
+    puts "Searching from #{outbound_date}"
+
+    is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
+    inbound_date = nil
+    if is_return
       puts 'Searching for return tickets'
-      load_inbound_date
-      puts "Searching until #{@inbound_date}"
+      inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
+      puts "Searching until #{inbound_date}"
     else
       puts 'Searching for single tickets'
     end
 
-    request_data
+    currency = 'EUR'
 
-    handle_response
+    timestamp = Time.now
 
-    format_data
+    if !skip_request
+      applicant = Applicant.new(@config[ConfigDefinition::API_KEY], currency)
+      raw_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
+      write_raw_data(timestamp, raw_data)
+    else
+      raw_data = File.read('data/response/2025-05-29T15:44:37.json')
+    end
+
+    formatted_data = format_data({
+        'timestamp': timestamp.strftime(OUTPUT_DATETIME_FORMAT),
+        'outboundDate': outbound_date.strftime(OUTPUT_DATETIME_FORMAT),
+        'inboundDate': is_return ? inbound_date.strftime(OUTPUT_DATETIME_FORMAT) : nil,
+        'origin': origin,
+        'destination': destination,
+        'currency': currency,
+      },
+      raw_data,
+    )
+    write_output_data(timestamp, formatted_data)
 
     puts "Search completed"
   rescue => exception
@@ -46,114 +74,37 @@ class HuntCommand < Thor
     end
   end
 
-  def load_outbound_date
+  def get_outbound_date(config_outbound_date)
     begin
-      configOutboundDate = @config[ConfigDefinition::SEARCH][ConfigDefinition::SEARCH_OUTBOUND_DATE]
-      if configOutboundDate == nil
-        @outbound_date = Date.today
-      else
-        @outbound_date = [Date.today, Date.strptime(configOutboundDate, '%Y-%m-%d')].max
+      if config_outbound_date == nil
+        return Date.today
       end
+
+      [Date.today, Date.strptime(config_outbound_date, '%Y-%m-%d')].max
     rescue => exception
       abort "Invalid outbound date: #{exception.message}"
     end
   end
 
-  def load_inbound_date
+  def get_inbound_date(config_inbound_date)
     latestDate = Date.today >> 11  # Add 11 months
-    configInboundDate = @config[ConfigDefinition::SEARCH][ConfigDefinition::SEARCH_INBOUND_DATE]
     begin
-      if configInboundDate == nil
-        @inbound_date = latestDate
-      else
-        @inbound_date = [latestDate, Date.strptime(configInboundDate, '%Y-%m-%d')].min
+      if config_inbound_date == nil
+        return latestDate
       end
+
+      [latestDate, Date.strptime(config_inbound_date, '%Y-%m-%d')].min
     rescue => exception
       abort "Invalid inbound date: #{exception.message}"
     end
   end
 
-  def request_data
-    @timestamp = Time.now
-    begin
-      @response = HTTParty.post(
-        # @see https://developer.airfranceklm.com/products/api/offers/api-reference/
-        'https://api.airfranceklm.com/opendata/offers/v1/available-offers',
-        headers: get_request_headers,
-        body: get_request_body.to_json
-      )
-    rescue => exception
-      abort "An error during the request: #{exception.message}"
-    end
-  end
-
-  def get_request_headers
-    {
-      'AFKL-TRAVEL-Host' => 'KL',
-      'API-Key' => @config[ConfigDefinition::API_KEY],
-      'Accept' => 'application/hal+json',
-      'Content-Type' => 'application/hal+json'
-    }
-  end
-
-  def get_request_body
-    search_config = @config[ConfigDefinition::SEARCH]
-
-    requested_conections = [
-      create_flight_connection(
-        @outbound_date.strftime(API_DATE_FORMAT),
-        search_config[ConfigDefinition::SEARCH_ORIGIN],
-        search_config[ConfigDefinition::SEARCH_DESTINATION]
-      )
-    ]
-    if search_config[ConfigDefinition::SEARCH_IS_RETURN]
-      create_flight_connection(
-        @inbound_date.strftime(API_DATE_FORMAT),
-        search_config[ConfigDefinition::SEARCH_DESTINATION],
-        search_config[ConfigDefinition::SEARCH_ORIGIN]
-      )
-    end
-
-    {
-      'commercialCabins': ['ALL'],
-      'bookingFlow': 'LEISURE',
-      'passengers': [{ 'id': 1, 'type': 'ADT' }],
-      'requestedConnections': requested_conections,
-      'currency': 'EUR'
-    }
-  end
-
-  def create_flight_connection(date, origin, destination)
-    {
-      'departureDate': date,
-      'origin': {
-        'code': origin,
-        'type': 'STOPOVER'
-      },
-      'destination': {
-        'code': destination,
-        'type': 'STOPOVER'
-      }
-    }
-  end
-
-  def handle_response
-    if @response.code == 200
-      file_path = "data/response/#{@timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
-      File.write(file_path, @response.body)
-      puts "Response written to #{file_path}"
-    else
-      puts "Error: Response failed with code #{@response.code}"
-      abort @response.body
-    end
-  end
-
-  def format_data
-    response_data = JSON.parse(@response.body)
+  def format_data(search_data, json_data)
+    response_data = JSON.parse(json_data)
 
     intineraries = response_data['itineraries']
     if intineraries.nil? || intineraries.empty?
-      abort "Unexpected JSON response: No itineraries found"
+      abort "Unexpected JSON: No itineraries found"
     end
 
     flights = []
@@ -166,23 +117,7 @@ class HuntCommand < Thor
       flights << flight
     end
 
-    search_config = @config[ConfigDefinition::SEARCH]
-    output_datetime_format = '%Y-%m-%dT%H:%M:%S'
-    output_data = {
-      search: {
-        'timestamp': @timestamp.strftime(output_datetime_format),
-        'outboundDate': @outbound_date.strftime(output_datetime_format),
-        'inboundDate': search_config[ConfigDefinition::SEARCH_IS_RETURN] ? @inbound_date.strftime(output_datetime_format) : nil,
-        'origin': search_config[ConfigDefinition::SEARCH_ORIGIN],
-        'destination': search_config[ConfigDefinition::SEARCH_DESTINATION],
-        'currency': 'EUR',
-      },
-      results: flights
-    }
-
-    file_path = "data/output/#{@timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
-    File.write(file_path, output_data.to_json)
-    puts "Output written to #{file_path}"
+    {search: search_data, results: flights}
   end
 
   def get_flight_products(itinerary)
@@ -252,6 +187,18 @@ class HuntCommand < Thor
       'price': economyPrice[:price],
       'airports': airports,
     }
+  end
+
+  def write_raw_data(timestamp, raw_data)
+    file_path = "data/response/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
+    File.write(file_path, raw_data.to_json)
+    puts "Response written to #{file_path}"
+  end
+
+  def write_output_data(timestamp, output_data)
+    file_path = "data/output/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
+    File.write(file_path, output_data.to_json)
+    puts "Output written to #{file_path}"
   end
 end
 

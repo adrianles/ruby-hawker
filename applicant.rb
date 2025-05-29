@@ -45,10 +45,12 @@ class Applicant
       )
     ]
     if is_return
-      create_flight_connection(
-        inbound_date.strftime(API_DATE_FORMAT),
-        destination,
-        origin,
+      requested_conections.append(
+        create_flight_connection(
+          inbound_date.strftime(API_DATE_FORMAT),
+          destination,
+          origin,
+        ),
       )
     end
 

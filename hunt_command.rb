@@ -33,7 +33,7 @@ class HuntCommand < Thor
 
     puts "Search completed"
   rescue => exception
-    puts "An error occurred: #{exception.message}"
+    puts "An error occurred: #{exception.message} \n#{exception.backtrace.join("\n")}"
   end
 
   private
@@ -139,7 +139,7 @@ class HuntCommand < Thor
 
   def handle_response
     if @response.code == 200
-      file_path = "data/response/#{@timestamp}.json"
+      file_path = "data/response/#{@timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
       File.write(file_path, @response.body)
       puts "Response written to #{file_path}"
     else
@@ -149,7 +149,109 @@ class HuntCommand < Thor
   end
 
   def format_data
-    # data = JSON.parse(response.body)
+    response_data = JSON.parse(@response.body)
+
+    intineraries = response_data['itineraries']
+    if intineraries.nil? || intineraries.empty?
+      abort "Unexpected JSON response: No itineraries found"
+    end
+
+    flights = []
+    intineraries.each do |itinerary|
+      flight = {
+        'products': get_flight_products(itinerary),
+        'connetions': get_flight_connetions(itinerary),
+      }
+      flight['overview'] = get_flight_overview(flight)
+      flights << flight
+    end
+
+    search_config = @config[ConfigDefinition::SEARCH]
+    output_datetime_format = '%Y-%m-%dT%H:%M:%S'
+    output_data = {
+      search: {
+        'timestamp': @timestamp.strftime(output_datetime_format),
+        'outboundDate': @outbound_date.strftime(output_datetime_format),
+        'inboundDate': search_config[ConfigDefinition::SEARCH_IS_RETURN] ? @inbound_date.strftime(output_datetime_format) : nil,
+        'origin': search_config[ConfigDefinition::SEARCH_ORIGIN],
+        'destination': search_config[ConfigDefinition::SEARCH_DESTINATION],
+        'currency': 'EUR',
+      },
+      results: flights
+    }
+
+    file_path = "data/output/#{@timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
+    File.write(file_path, output_data.to_json)
+    puts "Output written to #{file_path}"
+  end
+
+  def get_flight_products(itinerary)
+    flightProducts = itinerary['flightProducts']
+    if flightProducts.nil? || flightProducts.empty?
+      abort "Unexpected JSON response: itineraries.flightProducts not found"
+    end
+
+    products = []
+    flightProducts.each do |flightProduct|
+      connections = flightProduct['connections']
+      if connections.nil? || connections.empty?
+        abort "Unexpected JSON response: itineraries.flightProducts.connections not found"
+      end
+
+      connections.each do |connection|
+        products << {
+          'class': connection['commercialCabin'],
+          'price': connection['price']['totalPrice'],
+        }
+      end
+    end
+
+    products
+  end
+
+  def get_flight_connetions(itinerary)
+    connections = itinerary['connections']
+    if connections.nil? || connections.empty?
+      abort "Unexpected JSON response: itineraries.connections not found"
+    end
+
+    flight_segments = []
+    connections.each do |connection|
+      segments = connection['segments']
+      if segments.nil? || segments.empty?
+        abort "Unexpected JSON response: itineraries.connections.segments not found"
+      end
+
+      segments.each do |segment|
+        flight_segments << {
+          'origin': segment['origin']['code'],
+          'destination': segment['destination']['code'],
+          'departureDatetime': segment['departureDateTime'],
+          'arrivalDatetime': segment['arrivalDateTime'],
+          'flightDuration': segment['flightDuration'],
+          'flightId': "#{segment['marketingFlight']['carrier']['code']}#{segment['marketingFlight']['number']}"
+        }
+      end
+    end
+
+    flight_segments
+  end
+
+  def get_flight_overview(flight)
+    economyPrice = flight[:products].find { |product| product[:class] == 'ECONOMY' }
+
+    airports = []
+    flight[:connetions].each do |connection|
+      airports << connection[:origin]
+    end
+    airports << flight[:connetions].last[:destination]
+
+    return {
+      'departureTime': DateTime.parse(flight[:connetions].first[:departureDatetime]).strftime('%H:%M'),
+      'arrivalTime': DateTime.parse(flight[:connetions].last[:arrivalDatetime]).strftime('%H:%M'),
+      'price': economyPrice[:price],
+      'airports': airports,
+    }
   end
 end
 

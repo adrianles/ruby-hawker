@@ -12,4 +12,4 @@ ruby hunt_command.rb hunt
 ```
 
 The formatted response will be written to `data/output/{timestamp}.json`.
-You can also find the full output of the search request in `data/response/{timestamp}.json`.
+You can also find the full raw output of the search request in `data/response/{timestamp}.json`.

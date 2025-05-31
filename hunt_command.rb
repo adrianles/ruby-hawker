@@ -5,6 +5,7 @@ require 'date'
 
 require_relative 'config_definition'
 require_relative 'applicant'
+require_relative 'smith'
 
 class HuntCommand < Thor
   desc 'hunt', 'The hawker hunts its prey'
@@ -44,10 +45,11 @@ class HuntCommand < Thor
       raw_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
       write_raw_data(timestamp, raw_data)
     else
-      raw_data = File.read('data/response/2025-05-29T15:44:37.json')
+      raw_data = File.read('data/response/2025-05-30T13:59:05.json')
     end
 
-    formatted_data = format_data({
+    smith = Smith.new
+    formatted_data = smith.format({
         'timestamp': timestamp.strftime(OUTPUT_DATETIME_FORMAT),
         'outboundDate': outbound_date.strftime(OUTPUT_DATETIME_FORMAT),
         'inboundDate': is_return ? inbound_date.strftime(OUTPUT_DATETIME_FORMAT) : nil,
@@ -99,99 +101,9 @@ class HuntCommand < Thor
     end
   end
 
-  def format_data(search_data, json_data)
-    response_data = JSON.parse(json_data)
-
-    intineraries = response_data['itineraries']
-    if intineraries.nil? || intineraries.empty?
-      abort "Unexpected JSON: No itineraries found"
-    end
-
-    flights = []
-    intineraries.each do |itinerary|
-      flight = {
-        'products': get_flight_products(itinerary),
-        'connetions': get_flight_connetions(itinerary),
-      }
-      flight['overview'] = get_flight_overview(flight)
-      flights << flight
-    end
-
-    {search: search_data, results: flights}
-  end
-
-  def get_flight_products(itinerary)
-    flightProducts = itinerary['flightProducts']
-    if flightProducts.nil? || flightProducts.empty?
-      abort "Unexpected JSON response: itineraries.flightProducts not found"
-    end
-
-    products = []
-    flightProducts.each do |flightProduct|
-      connections = flightProduct['connections']
-      if connections.nil? || connections.empty?
-        abort "Unexpected JSON response: itineraries.flightProducts.connections not found"
-      end
-
-      connections.each do |connection|
-        products << {
-          'class': connection['commercialCabin'],
-          'price': connection['price']['totalPrice'],
-        }
-      end
-    end
-
-    products
-  end
-
-  def get_flight_connetions(itinerary)
-    connections = itinerary['connections']
-    if connections.nil? || connections.empty?
-      abort "Unexpected JSON response: itineraries.connections not found"
-    end
-
-    flight_segments = []
-    connections.each do |connection|
-      segments = connection['segments']
-      if segments.nil? || segments.empty?
-        abort "Unexpected JSON response: itineraries.connections.segments not found"
-      end
-
-      segments.each do |segment|
-        flight_segments << {
-          'origin': segment['origin']['code'],
-          'destination': segment['destination']['code'],
-          'departureDatetime': segment['departureDateTime'],
-          'arrivalDatetime': segment['arrivalDateTime'],
-          'flightDuration': segment['flightDuration'],
-          'flightId': "#{segment['marketingFlight']['carrier']['code']}#{segment['marketingFlight']['number']}"
-        }
-      end
-    end
-
-    flight_segments
-  end
-
-  def get_flight_overview(flight)
-    economyPrice = flight[:products].find { |product| product[:class] == 'ECONOMY' }
-
-    airports = []
-    flight[:connetions].each do |connection|
-      airports << connection[:origin]
-    end
-    airports << flight[:connetions].last[:destination]
-
-    return {
-      'departureTime': DateTime.parse(flight[:connetions].first[:departureDatetime]).strftime('%H:%M'),
-      'arrivalTime': DateTime.parse(flight[:connetions].last[:arrivalDatetime]).strftime('%H:%M'),
-      'price': economyPrice[:price],
-      'airports': airports,
-    }
-  end
-
-  def write_raw_data(timestamp, raw_data)
+  def write_raw_data(timestamp, json_raw_data)
     file_path = "data/response/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
-    File.write(file_path, raw_data.to_json)
+    File.write(file_path, json_raw_data)
     puts "Response written to #{file_path}"
   end
 

@@ -13,6 +13,10 @@ class HuntCommand < Thor
   OUTPUT_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
 
   def hunt
+    # rate limits:
+    #     2 requests per second
+    #     1000 requests per day
+
     puts 'Preparing the search...'
 
     skip_request = false
@@ -45,7 +49,7 @@ class HuntCommand < Thor
       raw_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
       write_raw_data(timestamp, raw_data)
     else
-      raw_data = File.read('data/response/2025-05-30T13:59:05.json')
+      raw_data = File.read('data/response/2025-06-08T13:41:24.json')
     end
 
     smith = Smith.new

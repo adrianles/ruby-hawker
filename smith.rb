@@ -1,11 +1,8 @@
 require 'json'
 
 class Smith
-  TOTAL_PRICE_KEY = 'price'
-  CURRENCY_KEY = 'currency'
-
   def format(search_data, json_data)
-    response_data = JSON.parse(json_data)
+    response_data = JSON.parse(json_data, symbolize_names: false)
 
     itineraries = response_data['itineraries']
     if itineraries.nil? || itineraries.empty?
@@ -15,7 +12,7 @@ class Smith
     bundles = []
     itineraries.each do |itinerary|
       bundle = get_bundle(itinerary)
-      bundle['overview'] = get_product_overview(bundle)
+      bundle[:overview] = get_bundle_overview(bundle)
       bundles.append(bundle)
     end
 
@@ -47,9 +44,9 @@ class Smith
       route = get_route(connections[i], options_per_route[i])
       case i
         when 0
-          bundle['outbound'] = route
+          bundle[:outbound] = route
         when 1
-          bundle['inbound'] = route
+          bundle[:inbound] = route
         else
           abort 'Unexpected JSON: more than 2 itineraries[i].connections found'
       end
@@ -69,14 +66,14 @@ class Smith
       pf_connections.each_index do |i|
         options_per_route[i] ||= []
         options_per_route[i].append({
-          'class': {
-            'code': pf_connections[i]['fareFamily']['code'],
-            'hierarchy': pf_connections[i]['fareFamily']['hierarchy'],
-            'name': pf_connections[i]['commercialCabin'],
+          class: {
+            code: pf_connections[i]['fareFamily']['code'],
+            hierarchy: pf_connections[i]['fareFamily']['hierarchy'],
+            name: pf_connections[i]['commercialCabin'],
           },
-          'numberOfSeats': pf_connections[i]['numberOfSeatsAvailable'],
-          'price': pf_connections[i]['price']['totalPrice'],
-          'currency': pf_connections[i]['price']['currency'],
+          number_of_seats: pf_connections[i]['numberOfSeatsAvailable'],
+          price: pf_connections[i]['price']['totalPrice'],
+          currency: pf_connections[i]['price']['currency'],
         })
       end
     end
@@ -93,179 +90,75 @@ class Smith
     flights = []
     segments.each do |segment|
       flights << {
-        'origin': segment['origin']['code'],
-        'destination': segment['destination']['code'],
-        'flightId': "#{segment['marketingFlight']['carrier']['code']}#{segment['marketingFlight']['number']}",
-        'departureDatetime': segment['departureDateTime'],
-        'arrivalDatetime': segment['arrivalDateTime'],
-        'flightDuration': segment['flightDuration'],
-        'transferTime': segment['transferTime'],
-        'dateVariation': segment['dateVariation'],
+        origin: segment['origin']['code'],
+        destination: segment['destination']['code'],
+        flight_id: "#{segment['marketingFlight']['carrier']['code']}#{segment['marketingFlight']['number']}",
+        departure_datetime: segment['departureDateTime'],
+        arrival_datetime: segment['arrivalDateTime'],
+        flight_duration: segment['flightDuration'],
+        transfer_time: segment['transferTime'],
+        date_variation: segment['dateVariation'],
       }
     end
 
     {
-      'options': options,
-      'dateVariation': connection['dateVariation'],
-      'duration': connection['duration'],
-      'flights': flights,
+      options: options,
+      date_variation: connection['dateVariation'],
+      duration: connection['duration'],
+      flights: flights,
     }
   end
 
-  def get_product_overview(product)
-    # TODO
-=begin
-    economyPrice = product[:products].find { |product| product[:class] == 'ECONOMY' }
+  def get_bundle_overview(bundle)
+    outbound_bundle = bundle[:outbound]
+    cheapest_outbound_option = get_cheapest_option(outbound_bundle[:options])
 
-    airports = []
-    product[:connetions].each do |connection|
-      airports << connection[:origin]
+    inbound_bundle = bundle[:inbound]
+    inbound_overview = nil
+    cheapest_inbound_price = 0
+
+    unless inbound_bundle.nil?
+      cheapest_inbound_option = get_cheapest_option(inbound_bundle[:options])
+      cheapest_inbound_price = cheapest_inbound_option[:price]
+
+      inbound_overview = {
+        departure_time: DateTime.parse(inbound_bundle[:flights].first[:departure_datetime]).strftime(time_format),
+        arrival_time: DateTime.parse(inbound_bundle[:flights].last[:arrival_datetime]).strftime(time_format),
+        date_variation: inbound_bundle[:date_variation],
+        duration: inbound_bundle[:duration],
+        price: cheapest_inbound_option[:price],
+        class: cheapest_inbound_option[:class][:name],
+        airports: get_airports(inbound_bundle[:flights]),
+      }
     end
-    airports << product[:connetions].last[:destination]
 
-    return {
-      'departureTime': DateTime.parse(product[:connetions].first[:departureDatetime]).strftime('%H:%M'),
-      'arrivalTime': DateTime.parse(product[:connetions].last[:arrivalDatetime]).strftime('%H:%M'),
-      'price': economyPrice[:price],
-      'airports': airports,
+    time_format = '%H:%M'
+
+    {
+      total_price: cheapest_outbound_option[:price] + cheapest_inbound_price,
+      currency: cheapest_outbound_option[:currency],
+      outbound: {
+        departure_time: DateTime.parse(outbound_bundle[:flights].first[:departure_datetime]).strftime(time_format),
+        arrival_time: DateTime.parse(outbound_bundle[:flights].last[:arrival_datetime]).strftime(time_format),
+        date_variation: outbound_bundle[:date_variation],
+        duration: outbound_bundle[:duration],
+        price: cheapest_outbound_option[:price],
+        class: cheapest_outbound_option[:class][:name],
+        airports: get_airports(outbound_bundle[:flights]),
+      },
+      inbound: inbound_overview
     }
-=end
-    {}
+  end
+
+  def get_cheapest_option(options)
+    options.min_by { |option| option[:price] }
+  end
+
+  def get_airports(flights)
+    airports = []
+    flights.each do |flight|
+      airports << flight[:origin]
+    end
+    airports << flights.last[:destination]
   end
 end
-
-=begin
-  option (product) = {
-    fareFamily: {
-      code: "BUSSTANDMH",
-      hierarchy: 6000
-    },
-    class: "BUSINESS",
-    numberOfSeatsAvailable: 2,
-    price: price.totalPrice
-  }
-
-  route (connection) = {
-    options: [option1, option2],
-    flights: [flight1, flight2, flight3],
-  }
-
-  bundles (itinerary) = [
-    [ruta_ida1, ruta_vuelta1, MIN_TOTAL_PRICE()],
-    [ruta_ida1, ruta_vuelta2, MIN_TOTAL_PRICE()],
-    [ruta_ida2, ruta_vuelta2, MIN_TOTAL_PRICE()],
-  ]
-
-
-  bundles = itinerary: [
-    { 
-      routes = connexion: [
-        {
-          options: [{
-            fareFamily: {
-              code: "LIGHT",
-              hierarchy: 7500
-            },
-            class: "ECONOMY",
-            numberOfSeatsAvailable: 5,
-            price: price.totalPrice
-            }, {
-            fareFamily: {
-              code: "BUSSTANDMH",
-              hierarchy: 6000
-            },
-            class: "BUSINESS",
-            numberOfSeatsAvailable: 2,
-            price: price.totalPrice
-            }
-          ],
-          flights = segment: [{
-            origin: bio
-            destination: ams
-            departureDateTime: "2025-07-11T06:55:00",
-            arrivalDateTime: "2025-07-11T09:35:00",
-            transferTime: 80,
-            dateVariation: 0,
-            flightDuration: 160,
-            }
-          ],
-        }, {
-          options: [{
-            fareFamily: {
-              code: "LIGHT",
-              hierarchy: 7500
-            },
-            class: "ECONOMY",
-            numberOfSeatsAvailable: 5,
-            price: price.totalPrice
-            }, {
-            fareFamily: {
-              code: "BUSSTANDMH",
-              hierarchy: 6000
-            },
-            class: "BUSINESS",
-            numberOfSeatsAvailable: 2,
-            price: price.totalPrice
-            }
-          ],
-          flights = segment: [{
-            origin: ams
-            destination: mad
-            departureDateTime: "2025-07-11T06:55:00",
-            arrivalDateTime: "2025-07-11T09:35:00",
-            transferTime: 80,
-            dateVariation: 0,
-            flightDuration: 160,
-            }, {
-            origin: mad
-            destination: bio
-            departureDateTime: "2025-07-11T06:55:00",
-            arrivalDateTime: "2025-07-11T09:35:00",
-            transferTime: 80,
-            dateVariation: 0,
-            flightDuration: 160,
-            }
-          ]
-        },
-    ] }
-  ]
-
-  itinerary: product = trip = bundle; ex: [bio-ams, ams-mad-bio]
-    flights; ex: [bio-ams, ams-bio]
-      segments; ex: [bio-ams]
-                    [ams-mad, mad-bio]
-
-
-=end
-
-=begin
-    example
-      request: bio-ams & ams-bio
-      response:
-
-        flightProducts:
-          price:
-            totalPrice:
-            currency:
-          connections: [bio-ams, ams-bio]
-            numberOfSeatsAvailable:
-            fareFamily:
-              code: string
-              hierarchy: int
-            commercialCabin:
-            price:
-              totalPrice:
-              currency:
-        connections: [bio-ams, ams-bio]
-          dateVariation: 0 (+0 days)
-          duration: 130 (minutes)
-          segements: [bio-ams, ams-mad, mad-bio]
-            origin:
-            destination:
-            marketingFlight:
-            "departureDateTime": "2025-07-11T06:55:00",
-            "arrivalDateTime": "2025-07-11T09:35:00",
-            "transferTime": 80,
-            "dateVariation": 0,
-            "flightDuration": 160
-=end

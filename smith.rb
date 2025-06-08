@@ -16,7 +16,7 @@ class Smith
       bundles.append(bundle)
     end
 
-    { search: search_data, bundles: bundles }
+    { search: search_data, bundles: bundles, overview: get_search_overview(bundles) }
   end
 
   def get_bundle(itinerary)
@@ -160,5 +160,13 @@ class Smith
       airports << flight[:origin]
     end
     airports << flights.last[:destination]
+  end
+
+  def get_search_overview(bundles)
+    get_cheapest_bundle(bundles)[:overview]
+  end
+
+  def get_cheapest_bundle(bundles)
+    bundles.min_by { |bundle| bundle[:overview][:total_price] }
   end
 end

@@ -5,6 +5,7 @@ require 'date'
 
 require_relative 'config_definition'
 require_relative 'applicant'
+require_relative 'moderator'
 require_relative 'smith'
 
 class HuntCommand < Thor
@@ -19,7 +20,7 @@ class HuntCommand < Thor
 
     puts 'Preparing the search...'
 
-    skip_request = false
+    skip_request = true
 
     load_config
     search_config = @config[ConfigDefinition::SEARCH]
@@ -46,22 +47,30 @@ class HuntCommand < Thor
 
     if !skip_request
       applicant = Applicant.new(@config[ConfigDefinition::API_KEY], currency)
-      raw_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
-      write_raw_data(timestamp, raw_data)
+      json_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
+      write_raw_data(timestamp, json_data)
     else
-      raw_data = File.read('data/response/2025-06-08T13:41:24.json')
+      json_data = File.read('data/example/mad-ams-return.json')
     end
+
+    raw_data = JSON.parse(json_data, symbolize_names: false)
+
+    filters = search_config['exclude']
+    moderator = Moderator.new
+    filtered_data = moderator.filter(raw_data, filters)
 
     smith = Smith.new
     formatted_data = smith.format({
-        'timestamp': timestamp.strftime(OUTPUT_DATETIME_FORMAT),
-        'outboundDate': outbound_date.strftime(OUTPUT_DATETIME_FORMAT),
-        'inboundDate': is_return ? inbound_date.strftime(OUTPUT_DATETIME_FORMAT) : nil,
-        'origin': origin,
-        'destination': destination,
-        'currency': currency,
+        timestamp: timestamp.strftime(OUTPUT_DATETIME_FORMAT),
+        outbound_date: outbound_date.strftime(OUTPUT_DATETIME_FORMAT),
+        inbound_date: is_return ? inbound_date.strftime(OUTPUT_DATETIME_FORMAT) : nil,
+        origin: origin,
+        destination: destination,
+        is_return: is_return,
+        currency: currency,
+        filters: filters,
       },
-      raw_data,
+      filtered_data,
     )
     write_output_data(timestamp, formatted_data)
 

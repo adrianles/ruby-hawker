@@ -1,8 +1,6 @@
-require 'json'
-
 class Smith
-  def format(search_data, json_data)
-    response_data = JSON.parse(json_data, symbolize_names: false)
+  def format(search_data, response_data)
+    @currency = search_data[:currency]
 
     itineraries = response_data['itineraries']
     if itineraries.nil? || itineraries.empty?
@@ -19,10 +17,12 @@ class Smith
     { search: search_data, bundles: bundles, overview: get_search_overview(bundles) }
   end
 
+  private
+
   def get_bundle(itinerary)
     flightProducts = itinerary['flightProducts']
     if flightProducts.nil? || flightProducts.empty?
-      abort 'Unexpected JSON: itineraries.flightProducts not found'
+      abort 'Unexpected JSON: itineraries[i].flightProducts not found'
     end
 
     connections = itinerary['connections']
@@ -117,6 +117,8 @@ class Smith
     inbound_overview = nil
     cheapest_inbound_price = 0
 
+    time_format = '%H:%M'
+
     unless inbound_bundle.nil?
       cheapest_inbound_option = get_cheapest_option(inbound_bundle[:options])
       cheapest_inbound_price = cheapest_inbound_option[:price]
@@ -132,11 +134,9 @@ class Smith
       }
     end
 
-    time_format = '%H:%M'
-
     {
       total_price: cheapest_outbound_option[:price] + cheapest_inbound_price,
-      currency: cheapest_outbound_option[:currency],
+      currency: @currency,
       outbound: {
         departure_time: DateTime.parse(outbound_bundle[:flights].first[:departure_datetime]).strftime(time_format),
         arrival_time: DateTime.parse(outbound_bundle[:flights].last[:arrival_datetime]).strftime(time_format),

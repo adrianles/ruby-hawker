@@ -5,6 +5,18 @@
         "to": "AMS",
         "return": true,
         "outboundDate": null, // null equals to today
-        "inboundDate": "2055-12-31"
+        "inboundDate": "2055-12-31", // null equals to (today + 11 months) for return = true
+        "exclude": { // can be null
+            "higher-than": {
+                "price": null,
+                "duration": null,
+                "stops": null
+            },
+            "lower-than": {
+                "price": null,
+                "duration": null,
+                "stops": null
+            }
+        }
     }
 }

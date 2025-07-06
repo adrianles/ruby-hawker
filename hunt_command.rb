@@ -73,7 +73,7 @@ class HuntCommand < Thor
       inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
     end
 
-    _capture(outbound_date, is_return, inbound_date, true, verbose)
+    _capture(outbound_date, is_return, inbound_date, false, verbose)
   end
 
   private

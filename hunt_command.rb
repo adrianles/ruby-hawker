@@ -111,8 +111,10 @@ class HuntCommand < Thor
       json_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
       write_raw_data(timestamp, json_data)
     else
-      # json_data = File.read('data/example/mad-ams-single.json')
-      json_data = File.read('data/example/mad-ams-return.json')
+      # file = 'data/example/mad-ams-single.json'
+      file = 'data/example/mad-ams-return.json'
+      json_data = File.read(file)
+      puts_if_verbose 'Skipping request. Using file: ' + file
     end
 
     raw_data = JSON.parse(json_data, symbolize_names: false)

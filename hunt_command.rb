@@ -12,6 +12,7 @@ require_relative 'smith'
 class HuntCommand < Thor
 
   OUTPUT_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
+  OUTPUT_DATE_FORMAT = '%Y-%m-%d'
   HUNT_TIMEOUT = 0.6 # seconds
 
   desc 'hunt', 'The hawker hunts for prays in different dates'
@@ -123,8 +124,8 @@ class HuntCommand < Thor
     smith = Smith.new
     formatted_data = smith.format({
         timestamp: timestamp.strftime(OUTPUT_DATETIME_FORMAT),
-        outbound_date: outbound_date.strftime(OUTPUT_DATETIME_FORMAT),
-        inbound_date: is_return ? inbound_date.strftime(OUTPUT_DATETIME_FORMAT) : nil,
+        outbound_date: outbound_date.strftime(OUTPUT_DATE_FORMAT),
+        inbound_date: is_return ? inbound_date.strftime(OUTPUT_DATE_FORMAT) : nil,
         origin: origin,
         destination: destination,
         is_return: is_return,

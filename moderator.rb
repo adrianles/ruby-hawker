@@ -44,7 +44,7 @@ class Moderator
   def filter_data(response_data)
     itineraries = response_data['itineraries']
     if itineraries.nil? || itineraries.empty?
-      abort 'Unexpected JSON: No itineraries found'
+      itineraries = []
     end
 
     filtered_itineraries = []

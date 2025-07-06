@@ -9,36 +9,86 @@ require_relative 'moderator'
 require_relative 'smith'
 
 class HuntCommand < Thor
-  desc 'hunt', 'The hawker hunts its prey'
 
   OUTPUT_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
+  HUNT_TIMEOUT = 0.6 # seconds
 
+  desc 'hunt', 'The hawker hunts for prays in different dates'
   def hunt
-    # rate limits:
-    #     2 requests per second
-    #     1000 requests per day
-
-    puts 'Preparing the search...'
-
-    skip_request = true
+    verbose = true
 
     load_config
+    search_config = @config[ConfigDefinition::SEARCH]
+
+    outbound_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
+    inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
+    is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
+
+    request_count = 0
+
+    outbound_date.upto(inbound_date) do |o_date|
+      formatted_data = _capture(o_date, is_return, inbound_date, false, verbose)
+      overview = formatted_data[:overview]
+      request_count += 1
+      min_price = overview.nil? ? 0 : overview[:outbound][:price]
+      puts "[#{request_count}] out #{o_date.strftime('%Y-%m-%d')}: outbound flight price = #{overview.nil? ? '-' : min_price}€" if verbose
+      sleep HUNT_TIMEOUT
+    end
+
+    if is_return
+      outbound_date.upto(inbound_date) do |i_date|
+        formatted_data = _capture(outbound_date, is_return, i_date, false, verbose)
+        overview = formatted_data[:overview]
+        request_count += 1
+        min_price = overview.nil? ? 0 : overview[:inbound][:price]
+        puts "[#{request_count}] in #{i_date.strftime('%Y-%m-%d')}: inbound flight price = #{overview.nil? ? '-' : min_price}€" if verbose
+        sleep HUNT_TIMEOUT
+      end
+    end
+  end
+
+  desc 'capture', 'The hawker captures a pray in specific dates'
+  def capture
+    verbose = false
+
+    load_config
+    search_config = @config[ConfigDefinition::SEARCH]
+
+    outbound_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
+
+    is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
+    inbound_date = nil
+    if is_return
+      inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
+    end
+
+    _capture(outbound_date, is_return, inbound_date, true, verbose)
+  end
+
+  private
+
+  def _capture(
+    outbound_date,
+    is_return = false,
+    inbound_date = nil,
+    skip_request = false,
+    verbose = false
+  )
+    @_verbose = verbose
+
+    puts_if_verbose 'Preparing the search...'
+
     search_config = @config[ConfigDefinition::SEARCH]
 
     origin = search_config[ConfigDefinition::SEARCH_ORIGIN]
     destination = search_config[ConfigDefinition::SEARCH_DESTINATION]
 
-    outbound_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
-    puts "Searching from #{outbound_date}"
-
-    is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
-    inbound_date = nil
+    puts_if_verbose "Searching from #{outbound_date} [#{origin}->#{destination}]"
     if is_return
-      puts 'Searching for return tickets'
-      inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
-      puts "Searching until #{inbound_date}"
+      puts_if_verbose 'Searching for return tickets'
+      puts_if_verbose "Searching until #{inbound_date} [#{destination}->#{origin}]"
     else
-      puts 'Searching for single tickets'
+      puts_if_verbose 'Searching for single tickets'
     end
 
     currency = 'EUR'
@@ -50,6 +100,7 @@ class HuntCommand < Thor
       json_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
       write_raw_data(timestamp, json_data)
     else
+      # json_data = File.read('data/example/mad-ams-single.json')
       json_data = File.read('data/example/mad-ams-return.json')
     end
 
@@ -74,12 +125,16 @@ class HuntCommand < Thor
     )
     write_output_data(timestamp, formatted_data)
 
-    puts "Search completed"
+    puts_if_verbose "Search completed"
+
+    return formatted_data
   rescue => exception
-    puts "An error occurred: #{exception.message} \n#{exception.backtrace.join("\n")}"
+    puts_if_verbose "An error occurred: #{exception.message} \n#{exception.backtrace.join("\n")}"
   end
 
-  private
+  def puts_if_verbose(message)
+    puts message if @_verbose
+  end
 
   def load_config
     begin
@@ -117,13 +172,13 @@ class HuntCommand < Thor
   def write_raw_data(timestamp, json_raw_data)
     file_path = "data/response/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
     File.write(file_path, json_raw_data)
-    puts "Response written to #{file_path}"
+    puts_if_verbose "Response written to #{file_path}"
   end
 
   def write_output_data(timestamp, output_data)
     file_path = "data/output/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
     File.write(file_path, output_data.to_json)
-    puts "Output written to #{file_path}"
+    puts_if_verbose "Output written to #{file_path}"
   end
 end
 

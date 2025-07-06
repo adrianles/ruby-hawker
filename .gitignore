@@ -1,3 +1,5 @@
 search_config.json
 
 data/*
+
+.vscode/

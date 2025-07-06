@@ -4,7 +4,7 @@ class Smith
 
     itineraries = response_data['itineraries']
     if itineraries.nil? || itineraries.empty?
-      abort 'Unexpected JSON: No itineraries found'
+      itineraries = []
     end
 
     bundles = []
@@ -163,7 +163,7 @@ class Smith
   end
 
   def get_search_overview(bundles)
-    get_cheapest_bundle(bundles)[:overview]
+    get_cheapest_bundle(bundles)&.[](:overview)
   end
 
   def get_cheapest_bundle(bundles)

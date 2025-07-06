@@ -2,6 +2,7 @@ require 'thor'
 require 'httparty'
 require 'json'
 require 'date'
+require 'csv'
 
 require_relative 'config_definition'
 require_relative 'applicant'
@@ -25,13 +26,17 @@ class HuntCommand < Thor
     is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
 
     request_count = 0
+    o_min_prices = {}
+    i_min_prices = {}
 
     outbound_date.upto(inbound_date) do |o_date|
       formatted_data = _capture(o_date, is_return, inbound_date, false, verbose)
       overview = formatted_data[:overview]
       request_count += 1
-      min_price = overview.nil? ? 0 : overview[:outbound][:price]
-      puts "[#{request_count}] out #{o_date.strftime('%Y-%m-%d')}: outbound flight price = #{overview.nil? ? '-' : min_price}€" if verbose
+      min_price = overview.nil? ? nil : overview[:outbound][:price]
+      o_min_prices[o_date] = min_price
+      puts o_min_prices.inspect
+      puts "[#{request_count}] out #{o_date.strftime('%Y-%m-%d')}: outbound flight price = #{min_price.nil? ? '-' : min_price}€" if verbose
       sleep HUNT_TIMEOUT
     end
 
@@ -40,11 +45,16 @@ class HuntCommand < Thor
         formatted_data = _capture(outbound_date, is_return, i_date, false, verbose)
         overview = formatted_data[:overview]
         request_count += 1
-        min_price = overview.nil? ? 0 : overview[:inbound][:price]
-        puts "[#{request_count}] in #{i_date.strftime('%Y-%m-%d')}: inbound flight price = #{overview.nil? ? '-' : min_price}€" if verbose
+        min_price = overview.nil? ? nil : overview[:inbound][:price]
+        i_min_prices[i_date] = min_price
+        puts i_min_prices.inspect
+        puts "[#{request_count}] in #{i_date.strftime('%Y-%m-%d')}: inbound flight price = #{min_price.nil? ? '-' : min_price}€" if verbose
         sleep HUNT_TIMEOUT
       end
     end
+
+    puts "request count: #{request_count}"
+    puts get_min_price_csv(get_min_prices_matrix(o_min_prices, i_min_prices))
   end
 
   desc 'capture', 'The hawker captures a pray in specific dates'
@@ -179,6 +189,22 @@ class HuntCommand < Thor
     file_path = "data/output/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
     File.write(file_path, output_data.to_json)
     puts_if_verbose "Output written to #{file_path}"
+  end
+
+  def get_min_prices_matrix(o_min_prices, i_min_prices)
+    dates = (o_min_prices.keys + i_min_prices.keys).uniq.sort
+
+    dates.map do |date|
+      [date, o_min_prices[date], i_min_prices[date]]
+    end
+  end
+
+  def get_min_price_csv(min_prices_matrix)
+    csv_string = CSV.generate do |csv|
+      min_prices_matrix.each { |row| csv << row }
+    end
+
+    return csv_string
   end
 end
 

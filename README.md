@@ -7,6 +7,7 @@ You will be able to set up some parameters in terms of flight origin and destina
 Then Hawker will fetch the information and format it in JSON.
 
 You only need to obtain an API key from their website by creating a free account.
+The free account is rate limited to 2 requests per second and 1000 requests per day.
 
 ## Usage
 
@@ -33,10 +34,11 @@ This way you can compare the prices for all days for both outbound and inbound f
 ruby hunt_command.rb hunt
 ```
 
-The formatted response will be written to `data/output/{timestamp}.json`.
-You can also find the full raw output of the search request in `data/response/{timestamp}.json`.
+The formatted response will be written to `data/output/{current_timestamp}.json`.
+You can also find the full raw output of the search request in `data/response/{current_timestamp}.json`.
+For the `hunt` command, a csv file will be created with the dates and the minimun price for each day at `data/output/{current_timestamp}.csv`.
 
 TODO tasks:
-- write in per day folder
+- improve number of request done in hunt by searching 1-1, 2-2, 3-3 instead of 1-3, 2-3, 3-3, 1-1, 1-2, 1-3 (double check if prices are the same first)
 - meta info on how many calls in a day (one day in Amsterdam's timezone)
-- update readme
+- write in per day folder

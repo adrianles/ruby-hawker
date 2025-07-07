@@ -13,11 +13,12 @@ class HuntCommand < Thor
 
   OUTPUT_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
   OUTPUT_DATE_FORMAT = '%Y-%m-%d'
-  HUNT_TIMEOUT = 0.6 # seconds
+  HUNT_TIMEOUT = 0.51 # seconds
 
   desc 'hunt', 'The hawker hunts for prays in different dates'
   def hunt
-    verbose = true
+    verbose = false
+    timestamp = Time.now
 
     load_config
     search_config = @config[ConfigDefinition::SEARCH]
@@ -31,36 +32,40 @@ class HuntCommand < Thor
     i_min_prices = {}
 
     outbound_date.upto(inbound_date) do |o_date|
-      formatted_data = _capture(o_date, is_return, inbound_date, false, verbose)
+      formatted_data = _capture(timestamp, o_date, is_return, inbound_date, false, verbose)
       overview = formatted_data[:overview]
       request_count += 1
       min_price = overview.nil? ? nil : overview[:outbound][:price]
       o_min_prices[o_date] = min_price
-      puts o_min_prices.inspect
       puts "[#{request_count}] out #{o_date.strftime('%Y-%m-%d')}: outbound flight price = #{min_price.nil? ? '-' : min_price}€" if verbose
       sleep HUNT_TIMEOUT
     end
 
     if is_return
       outbound_date.upto(inbound_date) do |i_date|
-        formatted_data = _capture(outbound_date, is_return, i_date, false, verbose)
+        formatted_data = _capture(timestamp, outbound_date, is_return, i_date, false, verbose)
         overview = formatted_data[:overview]
         request_count += 1
         min_price = overview.nil? ? nil : overview[:inbound][:price]
         i_min_prices[i_date] = min_price
-        puts i_min_prices.inspect
         puts "[#{request_count}] in #{i_date.strftime('%Y-%m-%d')}: inbound flight price = #{min_price.nil? ? '-' : min_price}€" if verbose
         sleep HUNT_TIMEOUT
       end
     end
 
     puts "request count: #{request_count}"
-    puts get_min_price_csv(get_min_prices_matrix(o_min_prices, i_min_prices))
+    write_hunt_min_price_csv(timestamp, get_min_price_csv(get_min_prices_matrix(
+      search_config[ConfigDefinition::SEARCH_ORIGIN],
+      o_min_prices,
+      search_config[ConfigDefinition::SEARCH_DESTINATION],
+      i_min_prices,
+    )))
   end
 
   desc 'capture', 'The hawker captures a pray in specific dates'
   def capture
     verbose = false
+    timestamp = Time.now
 
     load_config
     search_config = @config[ConfigDefinition::SEARCH]
@@ -73,12 +78,13 @@ class HuntCommand < Thor
       inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
     end
 
-    _capture(outbound_date, is_return, inbound_date, false, verbose)
+    _capture(timestamp, outbound_date, is_return, inbound_date, false, verbose)
   end
 
   private
 
   def _capture(
+    timestamp,
     outbound_date,
     is_return = false,
     inbound_date = nil,
@@ -103,8 +109,6 @@ class HuntCommand < Thor
     end
 
     currency = 'EUR'
-
-    timestamp = Time.now
 
     if !skip_request
       applicant = Applicant.new(@config[ConfigDefinition::API_KEY], currency)
@@ -194,12 +198,20 @@ class HuntCommand < Thor
     puts_if_verbose "Output written to #{file_path}"
   end
 
-  def get_min_prices_matrix(o_min_prices, i_min_prices)
+  def write_hunt_min_price_csv(timestamp, csv_min_price_data)
+    file_path = "data/output/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.csv"
+    File.write(file_path, csv_min_price_data)
+    puts_if_verbose "min price CSV data written to #{file_path}"
+  end
+
+  def get_min_prices_matrix(origin, o_min_prices, destination, i_min_prices)
     dates = (o_min_prices.keys + i_min_prices.keys).uniq.sort
 
-    dates.map do |date|
-      [date, o_min_prices[date], i_min_prices[date]]
+    matrix = dates.map do |date|
+      [date.strftime(OUTPUT_DATE_FORMAT), o_min_prices[date], i_min_prices[date]]
     end
+
+    [['date', origin, destination]] + matrix
   end
 
   def get_min_price_csv(min_prices_matrix)

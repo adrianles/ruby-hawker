@@ -13,7 +13,7 @@ class HuntCommand < Thor
 
   OUTPUT_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
   OUTPUT_DATE_FORMAT = '%Y-%m-%d'
-  HUNT_TIMEOUT = 0.51 # seconds
+  HUNT_TIMEOUT = 1 # seconds
 
   desc 'hunt', 'The hawker hunts for prays in different dates'
   def hunt
@@ -37,7 +37,7 @@ class HuntCommand < Thor
       request_count += 1
       min_price = overview.nil? ? nil : overview[:outbound][:price]
       o_min_prices[o_date] = min_price
-      puts "[#{request_count}] out #{o_date.strftime('%Y-%m-%d')}: outbound flight price = #{min_price.nil? ? '-' : min_price}€" if verbose
+      puts "[#{request_count}] out #{o_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
       sleep HUNT_TIMEOUT
     end
 
@@ -48,7 +48,7 @@ class HuntCommand < Thor
         request_count += 1
         min_price = overview.nil? ? nil : overview[:inbound][:price]
         i_min_prices[i_date] = min_price
-        puts "[#{request_count}] in #{i_date.strftime('%Y-%m-%d')}: inbound flight price = #{min_price.nil? ? '-' : min_price}€" if verbose
+        puts "[#{request_count}] in #{i_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
         sleep HUNT_TIMEOUT
       end
     end
@@ -64,7 +64,7 @@ class HuntCommand < Thor
 
   desc 'capture', 'The hawker captures a pray in specific dates'
   def capture
-    verbose = false
+    verbose = true
     timestamp = Time.now
 
     load_config
@@ -78,7 +78,7 @@ class HuntCommand < Thor
       inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
     end
 
-    _capture(timestamp, outbound_date, is_return, inbound_date, false, verbose)
+    _capture(timestamp, outbound_date, is_return, inbound_date, true, verbose)
   end
 
   private

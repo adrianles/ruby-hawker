@@ -67,12 +67,12 @@ class Applicant
     {
       'departureDate': date,
       'origin': {
-        'code': origin,
-        'type': 'STOPOVER'
+        'code': origin[ConfigDefinition::SEARCH_STATION_CODE],
+        'type': origin[ConfigDefinition::SEARCH_STATION_TYPE]
       },
       'destination': {
-        'code': destination,
-        'type': 'STOPOVER'
+        'code': destination[ConfigDefinition::SEARCH_STATION_CODE],
+        'type': destination[ConfigDefinition::SEARCH_STATION_TYPE]
       }
     }
   end

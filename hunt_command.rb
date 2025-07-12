@@ -55,9 +55,9 @@ class HuntCommand < Thor
 
     puts "request count: #{request_count}"
     write_hunt_min_price_csv(timestamp, get_min_price_csv(get_min_prices_matrix(
-      search_config[ConfigDefinition::SEARCH_ORIGIN],
+      search_config[ConfigDefinition::SEARCH_ORIGIN][ConfigDefinition::SEARCH_STATION_CODE],
       o_min_prices,
-      search_config[ConfigDefinition::SEARCH_DESTINATION],
+      search_config[ConfigDefinition::SEARCH_DESTINATION][ConfigDefinition::SEARCH_STATION_CODE],
       i_min_prices,
     )))
   end
@@ -78,7 +78,7 @@ class HuntCommand < Thor
       inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
     end
 
-    _capture(timestamp, outbound_date, is_return, inbound_date, true, verbose)
+    _capture(timestamp, outbound_date, is_return, inbound_date, false, verbose)
   end
 
   private
@@ -98,12 +98,14 @@ class HuntCommand < Thor
     search_config = @config[ConfigDefinition::SEARCH]
 
     origin = search_config[ConfigDefinition::SEARCH_ORIGIN]
+    origin_code = origin[ConfigDefinition::SEARCH_STATION_CODE]
     destination = search_config[ConfigDefinition::SEARCH_DESTINATION]
+    destination_code = destination[ConfigDefinition::SEARCH_STATION_CODE]
 
-    puts_if_verbose "Searching from #{outbound_date} [#{origin}->#{destination}]"
+    puts_if_verbose "Searching from #{outbound_date} [#{origin_code}->#{destination_code}]"
     if is_return
       puts_if_verbose 'Searching for return tickets'
-      puts_if_verbose "Searching until #{inbound_date} [#{destination}->#{origin}]"
+      puts_if_verbose "Searching until #{inbound_date} [#{destination_code}->#{origin_code}]"
     else
       puts_if_verbose 'Searching for single tickets'
     end
@@ -116,7 +118,7 @@ class HuntCommand < Thor
       write_raw_data(timestamp, json_data)
     else
       # file = 'data/example/mad-ams-single.json'
-      file = 'data/example/mad-ams-return.json'
+      file = 'data/example/par-tyo-return.json'
       json_data = File.read(file)
       puts_if_verbose 'Skipping request. Using file: ' + file
     end
@@ -132,8 +134,8 @@ class HuntCommand < Thor
         timestamp: timestamp.strftime(OUTPUT_DATETIME_FORMAT),
         outbound_date: outbound_date.strftime(OUTPUT_DATE_FORMAT),
         inbound_date: is_return ? inbound_date.strftime(OUTPUT_DATE_FORMAT) : nil,
-        origin: origin,
-        destination: destination,
+        origin: origin_code,
+        destination: destination_code,
         is_return: is_return,
         currency: currency,
         filters: filters,

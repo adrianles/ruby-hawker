@@ -34,6 +34,12 @@ class Licenser
 
   def load_request_count
     begin
+      unless File.exist?(REQUEST_COUNT_FILE)
+        @request_count = {}
+        persist_request_count
+        return
+      end
+
       @request_count = JSON.parse(File.read(REQUEST_COUNT_FILE))
     rescue => exception
       abort "An error loading the request count: #{exception.message}"

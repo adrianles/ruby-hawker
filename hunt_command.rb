@@ -44,7 +44,8 @@ class HuntCommand < Thor
         break
       end
 
-      formatted_data = _capture(timestamp, api_key, o_date, is_return, inbound_date, false, verbose)
+      file_suffix = "out-#{o_date.strftime(OUTPUT_DATE_FORMAT)}"
+      formatted_data = _capture(timestamp, api_key, o_date, is_return, inbound_date, false, verbose, file_suffix)
       overview = formatted_data[:overview]
       request_count += 1
       min_price = overview.nil? ? nil : overview[:outbound][:price]
@@ -61,7 +62,8 @@ class HuntCommand < Thor
           break
         end
 
-        formatted_data = _capture(timestamp, api_key, outbound_date, is_return, i_date, false, verbose)
+        file_suffix = "in-#{i_date.strftime(OUTPUT_DATE_FORMAT)}"
+        formatted_data = _capture(timestamp, api_key, outbound_date, is_return, i_date, false, verbose, file_suffix)
         overview = formatted_data[:overview]
         request_count += 1
         min_price = overview.nil? ? nil : overview[:inbound][:price]
@@ -106,7 +108,12 @@ class HuntCommand < Thor
       inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
     end
 
-    _capture(timestamp, api_key, outbound_date, is_return, inbound_date, false, verbose)
+    file_suffix = "capture-#{outbound_date.strftime(OUTPUT_DATE_FORMAT)}"
+    if is_return
+      file_suffix = "#{file_suffix}-#{inbound_date.strftime(OUTPUT_DATE_FORMAT)}"
+    end
+
+    _capture(timestamp, api_key, outbound_date, is_return, inbound_date, false, verbose, file_suffix)
     licenser.persist_request_count
   end
 
@@ -119,7 +126,8 @@ class HuntCommand < Thor
     is_return = false,
     inbound_date = nil,
     skip_request = false,
-    verbose = false
+    verbose = false,
+    file_suffix
   )
     @_verbose = verbose
 
@@ -145,7 +153,7 @@ class HuntCommand < Thor
     if !skip_request
       applicant = Applicant.new(api_key, currency)
       json_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
-      write_raw_data(timestamp, json_data)
+      write_raw_data(timestamp, json_data, file_suffix)
     else
       # file = 'data/example/mad-ams-single.json'
       file = 'data/example/par-tyo-return.json'
@@ -172,7 +180,7 @@ class HuntCommand < Thor
       },
       filtered_data,
     )
-    write_output_data(timestamp, formatted_data)
+    write_output_data(timestamp, formatted_data, file_suffix)
 
     puts_if_verbose "Search completed"
 
@@ -218,20 +226,24 @@ class HuntCommand < Thor
     end
   end
 
-  def write_raw_data(timestamp, json_raw_data)
-    file_path = "data/response/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
+  def write_raw_data(timestamp, json_raw_data, file_suffix)
+    file_path = "data/response/#{get_output_file_name(timestamp, file_suffix)}.json"
     File.write(file_path, json_raw_data)
     puts_if_verbose "Response written to #{file_path}"
   end
 
-  def write_output_data(timestamp, output_data)
-    file_path = "data/output/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.json"
+  def write_output_data(timestamp, output_data, file_suffix)
+    file_path = "data/output/#{get_output_file_name(timestamp, file_suffix)}.json"
     File.write(file_path, output_data.to_json)
     puts_if_verbose "Output written to #{file_path}"
   end
 
+  def get_output_file_name(timestamp, file_suffix)
+    "#{timestamp.strftime(OUTPUT_DATETIME_FORMAT)}-#{file_suffix}"
+  end
+
   def write_hunt_min_price_csv(timestamp, csv_min_price_data)
-    file_path = "data/output/#{timestamp.strftime('%Y-%m-%dT%H:%M:%S')}.csv"
+    file_path = "data/output/#{get_output_file_name(timestamp, 'summary')}.csv"
     File.write(file_path, csv_min_price_data)
     puts_if_verbose "min price CSV data written to #{file_path}"
   end

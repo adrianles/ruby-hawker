@@ -1,5 +1,5 @@
 {
-    "api-key": "auywksd31asdnj9cds3j65ka",
+    "api-keys": ["auywksd31asdnj9cds3j65ka"],
     "search": {
         "from": {
             code: "JFK",

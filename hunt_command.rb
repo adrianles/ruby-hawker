@@ -8,6 +8,7 @@ require_relative 'config_definition'
 require_relative 'applicant'
 require_relative 'moderator'
 require_relative 'smith'
+require_relative 'licenser'
 
 class HuntCommand < Thor
 
@@ -23,6 +24,11 @@ class HuntCommand < Thor
     load_config
     search_config = @config[ConfigDefinition::SEARCH]
 
+    if @config[ConfigDefinition::API_KEYS].length == 0
+      abort "No API keys configured. Please add at least one API key in the search_config.json file."
+    end
+    licenser = Licenser.new(@config[ConfigDefinition::API_KEYS])
+
     outbound_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
     inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
     is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
@@ -32,27 +38,40 @@ class HuntCommand < Thor
     i_min_prices = {}
 
     outbound_date.upto(inbound_date) do |o_date|
-      formatted_data = _capture(timestamp, o_date, is_return, inbound_date, false, verbose)
+      api_key, timeout = licenser.get_now_useable_api_key
+      if api_key.nil?
+        puts "No usable API keys available. You have reached the daily limit for the provided API keys."
+        break
+      end
+
+      formatted_data = _capture(timestamp, api_key, o_date, is_return, inbound_date, false, verbose)
       overview = formatted_data[:overview]
       request_count += 1
       min_price = overview.nil? ? nil : overview[:outbound][:price]
       o_min_prices[o_date] = min_price
       puts "[#{request_count}] out #{o_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
-      sleep HUNT_TIMEOUT
+      sleep timeout
     end
 
     if is_return
       outbound_date.upto(inbound_date) do |i_date|
-        formatted_data = _capture(timestamp, outbound_date, is_return, i_date, false, verbose)
+        api_key, timeout = licenser.get_now_useable_api_key
+        if api_key.nil?
+          puts "No usable API keys available. You have reached the daily limit for the provided API keys."
+          break
+        end
+
+        formatted_data = _capture(timestamp, api_key, outbound_date, is_return, i_date, false, verbose)
         overview = formatted_data[:overview]
         request_count += 1
         min_price = overview.nil? ? nil : overview[:inbound][:price]
         i_min_prices[i_date] = min_price
         puts "[#{request_count}] in #{i_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
-        sleep HUNT_TIMEOUT
+        sleep timeout
       end
     end
 
+    licenser.persist_request_count
     puts "request count: #{request_count}"
     write_hunt_min_price_csv(timestamp, get_min_price_csv(get_min_prices_matrix(
       search_config[ConfigDefinition::SEARCH_ORIGIN][ConfigDefinition::SEARCH_STATION_CODE],
@@ -70,6 +89,15 @@ class HuntCommand < Thor
     load_config
     search_config = @config[ConfigDefinition::SEARCH]
 
+    if @config[ConfigDefinition::API_KEYS].length == 0
+      abort "No API keys configured. Please add at least one API key in the search_config.json file."
+    end
+    licenser = Licenser.new(@config[ConfigDefinition::API_KEYS])
+    api_key, _ = licenser.get_now_useable_api_key
+    if api_key.nil?
+      abort "No usable API keys available. You have reached the daily limit for the provided API keys."
+    end
+
     outbound_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
 
     is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
@@ -78,13 +106,15 @@ class HuntCommand < Thor
       inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
     end
 
-    _capture(timestamp, outbound_date, is_return, inbound_date, false, verbose)
+    _capture(timestamp, api_key, outbound_date, is_return, inbound_date, false, verbose)
+    licenser.persist_request_count
   end
 
   private
 
   def _capture(
     timestamp,
+    api_key,
     outbound_date,
     is_return = false,
     inbound_date = nil,
@@ -113,7 +143,7 @@ class HuntCommand < Thor
     currency = 'EUR'
 
     if !skip_request
-      applicant = Applicant.new(@config[ConfigDefinition::API_KEY], currency)
+      applicant = Applicant.new(api_key, currency)
       json_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
       write_raw_data(timestamp, json_data)
     else

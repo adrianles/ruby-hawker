@@ -1,5 +1,5 @@
 class ConfigDefinition
-  API_KEY = 'api-key'
+  API_KEYS = 'api-keys'
   SEARCH = 'search'
   SEARCH_ORIGIN = 'from'
   SEARCH_DESTINATION = 'to'

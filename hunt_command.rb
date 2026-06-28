@@ -9,6 +9,7 @@ require_relative 'applicant'
 require_relative 'moderator'
 require_relative 'smith'
 require_relative 'licenser'
+require_relative 'station'
 
 class HuntCommand < Thor
 
@@ -179,9 +180,16 @@ class HuntCommand < Thor
   def load_config
     begin
       @config = JSON.parse(File.read('search_config.json'))
+      resolve_search_stations
     rescue => exception
       abort "An error loading the search config: #{exception.message}"
     end
+  end
+
+  def resolve_search_stations
+    search_config = @config[ConfigDefinition::SEARCH]
+    search_config[ConfigDefinition::SEARCH_ORIGIN] = Station.from_config(search_config[ConfigDefinition::SEARCH_ORIGIN])
+    search_config[ConfigDefinition::SEARCH_DESTINATION] = Station.from_config(search_config[ConfigDefinition::SEARCH_DESTINATION])
   end
 
   def get_outbound_date(config_outbound_date)

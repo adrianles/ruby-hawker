@@ -16,6 +16,7 @@ The free account is rate limited to 1 request per second and 100 requests per da
 Copy the `search_config.json.template` file and name it `search_config.json`.
 
 Add your personal API key and the desired search settings to the `search_config.json` file.
+Use 3-letter station codes for `from` and `to`. Known city codes are listed in `station.rb` as a human-readable reference, for example `PAR` for Paris. Codes in that map are sent as `CITY`; all other codes are sent as `AIRPORT`.
 
 You can then use the `capture` function to find the information for specific dates.
 Capture will search for:

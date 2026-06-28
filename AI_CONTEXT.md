@@ -40,6 +40,7 @@ The app searches for flights across a range of dates to help find the best optio
 - `moderator.rb`: Applies exclude filters for price, duration, and stops.
 - `smith.rb`: Converts raw API itinerary data into the app's output shape.
 - `licenser.rb`: Tracks request counts per API key and calculates wait times.
+- `station.rb`: City-code reference map and station type resolver. Codes in `Station::CITY_CODES` are sent as `CITY`; all other codes are sent as `AIRPORT`.
 - `config_definition.rb`: String constants for config keys.
 - `search_config.json.template`: Example search config, but currently not valid JSON because it contains comments and unquoted object keys.
 - `README.md`: User-facing project description and usage notes.
@@ -58,8 +59,8 @@ Expected `search_config.json` structure:
   - `api-keys`: array of API key strings.
   - `search`: search settings.
 - Search settings:
-  - `from`: object with `code` and `type`.
-  - `to`: object with `code` and `type`.
+  - `from`: 3-letter station code string.
+  - `to`: 3-letter station code string.
   - `return`: boolean; for `hunt`, `false` means one-way pricing and `true` means return-trip pricing with a calculated reverse leg.
   - `outboundDate`: `YYYY-MM-DD` or `null`; for `hunt`, this is the start of the searched date range.
   - `inboundDate`: `YYYY-MM-DD` or `null`; for `hunt`, this is the end of the searched date range.
@@ -77,6 +78,8 @@ Expected `search_config.json` structure:
 The AF/KLM API endpoint used is:
 
 `https://api.airfranceklm.com/opendata/offers/v2/available-offers`
+
+Config uses station codes only. Use `station.rb` as a Ctrl+F reference for city codes, for example `PAR => Paris` and `TYO => Tokyo`. Unknown 3-letter codes default to `AIRPORT`.
 
 `Applicant` sends:
 

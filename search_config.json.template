@@ -1,14 +1,8 @@
 {
     "api-keys": ["auywksd31asdnj9cds3j65ka"],
     "search": {
-        "from": {
-            code: "JFK",
-            type: "AIRPORT" // AIRPORT|CITY|COUNTRY|REGION|STOPOVER
-        },
-        "to": {
-            code: "PAR",
-            type: "CITY"
-        }
+        "from": "JFK", // Any airport code or a city code included in station.rb
+        "to": "PAR",
         "return": true, // false = one-way pricing, true = return-trip pricing
         "outboundDate": null, // null equals to today; for hunt, this is the range start
         "inboundDate": "2055-12-31", // null equals to (today + 11 months); for hunt, this is the range end

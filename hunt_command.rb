@@ -15,6 +15,7 @@ class HuntCommand < Thor
   OUTPUT_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
   OUTPUT_DATE_FORMAT = '%Y-%m-%d'
   HUNT_TIMEOUT = 1 # seconds
+  HUNT_PAIRING_GAP_DAYS = 7
 
   desc 'hunt', 'The hawker hunts for prays in different dates'
   def hunt
@@ -29,57 +30,39 @@ class HuntCommand < Thor
     end
     licenser = Licenser.new(@config[ConfigDefinition::API_KEYS])
 
-    outbound_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
-    inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
+    search_start_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
     is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
+    search_end_date = get_hunt_end_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE], is_return)
+    if search_end_date < search_start_date
+      abort "Invalid hunt date range: no searchable dates available with a #{HUNT_PAIRING_GAP_DAYS}-day return pairing gap."
+    end
 
     request_count = 0
-    o_min_prices = {}
-    i_min_prices = {}
+    min_prices = {}
 
-    outbound_date.upto(inbound_date) do |o_date|
+    search_start_date.upto(search_end_date) do |search_date|
       api_key, timeout = licenser.get_now_useable_api_key
       if api_key.nil?
         puts "No usable API keys available. You have reached the daily limit for the provided API keys."
         break
       end
 
-      file_suffix = "out-#{o_date.strftime(OUTPUT_DATE_FORMAT)}"
-      formatted_data = _capture(timestamp, api_key, o_date, is_return, inbound_date, false, verbose, file_suffix)
+      paired_return_date = is_return ? search_date + HUNT_PAIRING_GAP_DAYS : nil
+      file_suffix = "hunt-#{search_date.strftime(OUTPUT_DATE_FORMAT)}"
+      formatted_data = _capture(timestamp, api_key, search_date, is_return, paired_return_date, false, verbose, file_suffix)
       overview = formatted_data[:overview]
       request_count += 1
       min_price = overview.nil? ? nil : overview[:outbound][:price]
-      o_min_prices[o_date] = min_price
-      puts "[#{request_count}] out #{o_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
+      min_prices[search_date] = min_price
+      puts "[#{request_count}] #{search_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
       sleep timeout
-    end
-
-    if is_return
-      outbound_date.upto(inbound_date) do |i_date|
-        api_key, timeout = licenser.get_now_useable_api_key
-        if api_key.nil?
-          puts "No usable API keys available. You have reached the daily limit for the provided API keys."
-          break
-        end
-
-        file_suffix = "in-#{i_date.strftime(OUTPUT_DATE_FORMAT)}"
-        formatted_data = _capture(timestamp, api_key, outbound_date, is_return, i_date, false, verbose, file_suffix)
-        overview = formatted_data[:overview]
-        request_count += 1
-        min_price = overview.nil? ? nil : overview[:inbound][:price]
-        i_min_prices[i_date] = min_price
-        puts "[#{request_count}] in #{i_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
-        sleep timeout
-      end
     end
 
     licenser.persist_request_count
     puts "request count: #{request_count}"
     write_hunt_min_price_csv(timestamp, get_min_price_csv(get_min_prices_matrix(
-      search_config[ConfigDefinition::SEARCH_ORIGIN][ConfigDefinition::SEARCH_STATION_CODE],
-      o_min_prices,
-      search_config[ConfigDefinition::SEARCH_DESTINATION][ConfigDefinition::SEARCH_STATION_CODE],
-      i_min_prices,
+      "#{search_config[ConfigDefinition::SEARCH_ORIGIN][ConfigDefinition::SEARCH_STATION_CODE]}-#{search_config[ConfigDefinition::SEARCH_DESTINATION][ConfigDefinition::SEARCH_STATION_CODE]}",
+      min_prices,
     )))
   end
 
@@ -226,6 +209,16 @@ class HuntCommand < Thor
     end
   end
 
+  def get_hunt_end_date(config_inbound_date, is_return)
+    end_date = get_inbound_date(config_inbound_date)
+    if is_return
+      latest_paired_return_date = get_inbound_date(nil)
+      end_date = [end_date, latest_paired_return_date - HUNT_PAIRING_GAP_DAYS].min
+    end
+
+    end_date
+  end
+
   def write_raw_data(timestamp, json_raw_data, file_suffix)
     file_path = "data/response/#{get_output_file_name(timestamp, file_suffix)}.json"
     File.write(file_path, json_raw_data)
@@ -248,14 +241,14 @@ class HuntCommand < Thor
     puts_if_verbose "min price CSV data written to #{file_path}"
   end
 
-  def get_min_prices_matrix(origin, o_min_prices, destination, i_min_prices)
-    dates = (o_min_prices.keys + i_min_prices.keys).uniq.sort
+  def get_min_prices_matrix(route, min_prices)
+    dates = min_prices.keys.sort
 
     matrix = dates.map do |date|
-      [date.strftime(OUTPUT_DATE_FORMAT), o_min_prices[date], i_min_prices[date]]
+      [date.strftime(OUTPUT_DATE_FORMAT), min_prices[date]]
     end
 
-    [['date', origin, destination]] + matrix
+    [['date', route]] + matrix
   end
 
   def get_min_price_csv(min_prices_matrix)

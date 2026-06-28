@@ -9,9 +9,9 @@
             code: "PAR",
             type: "CITY"
         }
-        "return": true,
-        "outboundDate": null, // null equals to today
-        "inboundDate": "2055-12-31", // null equals to (today + 11 months) for return = true
+        "return": true, // false = one-way pricing, true = return-trip pricing
+        "outboundDate": null, // null equals to today; for hunt, this is the range start
+        "inboundDate": "2055-12-31", // null equals to (today + 11 months); for hunt, this is the range end
         "exclude": { // can be null
             "higher-than": {
                 "price": null,

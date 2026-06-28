@@ -17,7 +17,7 @@ class Applicant
     begin
       response = HTTParty.post(
         # @see https://developer.airfranceklm.com/products/api/offers/api-reference/
-        'https://api.airfranceklm.com/opendata/offers/v1/available-offers',
+        'https://api.airfranceklm.com/opendata/offers/v2/available-offers',
         headers: @headers,
         body: get_request_body(
           origin,

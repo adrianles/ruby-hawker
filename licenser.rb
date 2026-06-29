@@ -1,25 +1,32 @@
 class Licenser
   LIMIT_REQUESTS_PER_SECOND = 1
   LIMIT_REQUEST_PER_DAY = 100
+  POLL_SLEEP_SECONDS = 0.05
   REQUEST_COUNT_FILE = 'request_count.json'
 
   def initialize(api_keys)
     @api_keys = api_keys
     load_request_count
-    @last_usable_api_keys = {}
+    @next_available_at = {}
   end
 
-  # Returns nil or a pair of [api_key, timeout_seconds] for the next request.
-  def get_now_useable_api_key
-    api_key = get_usable_api_key
-    if api_key.nil?
-      return [nil, get_default_timeout]
-    end
+  # Waits until one API key can be used, or returns nil if all keys hit the daily limit.
+  def get_next_usable_api_key
+    loop do
+      @today = get_today
+      api_keys = get_quota_available_api_keys
+      if api_keys.empty?
+        return nil
+      end
 
-    increase_request_count(api_key)
-    last_usable_key_count = @last_usable_api_keys.length
-    mark_api_key_as_used(api_key)
-    [api_key, get_fast_timeout(last_usable_key_count)]
+      api_key = api_keys.find { |key| is_api_key_available?(key) }
+      unless api_key.nil?
+        mark_api_key_as_used(api_key)
+        return api_key
+      end
+
+      sleep_until_next_api_key(api_keys)
+    end
   end
 
   def persist_request_count
@@ -46,34 +53,29 @@ class Licenser
     end
   end
 
-  def get_usable_api_key
-    if @last_usable_api_keys.empty?
-      load_usable_api_keys
-    end
-
-    get_last_usable_api_keys.first
-  end
-
-  def get_last_usable_api_keys
-    @last_usable_api_keys.select { |_, value| value == true }.keys
-  end
-
   def mark_api_key_as_used(api_key)
-    @last_usable_api_keys[api_key] = false
-    if get_last_usable_api_keys.empty?
-      @last_usable_api_keys = {}
+    increase_request_count(api_key)
+    @next_available_at[api_key] = Time.now + request_window_seconds
+  end
+
+  def get_quota_available_api_keys
+    @api_keys.select do |api_key|
+      get_request_count(api_key) < LIMIT_REQUEST_PER_DAY
     end
   end
 
-  def load_usable_api_keys
-    @today = get_today
-    @last_usable_api_keys = {}
-    @api_keys.select do |api_key|
-      count = get_request_count(api_key)
-      if count < LIMIT_REQUEST_PER_DAY
-        @last_usable_api_keys[api_key] = true
-      end
-    end
+  def is_api_key_available?(api_key)
+    get_next_available_at(api_key) <= Time.now
+  end
+
+  def sleep_until_next_api_key(api_keys)
+    next_available_at = api_keys.map { |api_key| get_next_available_at(api_key) }.min
+    sleep_seconds = [next_available_at - Time.now, POLL_SLEEP_SECONDS].min
+    sleep sleep_seconds if sleep_seconds.positive?
+  end
+
+  def get_next_available_at(api_key)
+    @next_available_at[api_key] || Time.at(0)
   end
 
   def get_request_count(api_key)
@@ -89,15 +91,7 @@ class Licenser
     Time.now.utc.to_date.strftime('%Y-%m-%d')
   end
 
-  def round_up_to_first_decimal(number)
-    (number * 10).ceil / 10.0
-  end
-
-  def get_default_timeout
-    round_up_to_first_decimal(1.0 / LIMIT_REQUESTS_PER_SECOND)
-  end
-
-  def get_fast_timeout(usable_api_keys_count)
-    round_up_to_first_decimal((1.0 / LIMIT_REQUESTS_PER_SECOND) / usable_api_keys_count)
+  def request_window_seconds
+    1.0 / LIMIT_REQUESTS_PER_SECOND
   end
 end

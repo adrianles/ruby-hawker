@@ -19,6 +19,10 @@ The app searches for flights across a range of dates to help find the best optio
   - `ruby hunt_command.rb hunt`
   - `ruby hunt_command.rb capture`
 
+## API Quota Safety
+
+Do not run `ruby hunt_command.rb hunt` without explicit user permission. It makes real Air France/KLM API requests and consumes daily API-key quota. Before every `hunt` run, inspect `search_config.json` and calculate the date range size so the user knows how many requests will be used. Current `hunt` behavior makes one API request per searched date.
+
 ## Main Flow
 
 `HuntCommand` in `hunt_command.rb` is the orchestrator.
@@ -39,7 +43,7 @@ The app searches for flights across a range of dates to help find the best optio
 - `applicant.rb`: Builds and sends the AF/KLM API request.
 - `moderator.rb`: Applies exclude filters for price, duration, and stops.
 - `smith.rb`: Converts raw API itinerary data into the app's output shape.
-- `licenser.rb`: Tracks request counts per API key and calculates wait times.
+- `licenser.rb`: Tracks request counts per API key and schedules each key independently against the per-second and per-day limits.
 - `station.rb`: City-code reference map and station type resolver. Codes in `Station::CITY_CODES` are sent as `CITY`; all other codes are sent as `AIRPORT`.
 - `config_definition.rb`: String constants for config keys.
 - `search_config.json.template`: Example search config, but currently not valid JSON because it contains comments and unquoted object keys.

@@ -15,7 +15,6 @@ class HuntCommand < Thor
 
   OUTPUT_DATETIME_FORMAT = '%Y-%m-%dT%H:%M:%S'
   OUTPUT_DATE_FORMAT = '%Y-%m-%d'
-  HUNT_TIMEOUT = 1 # seconds
   HUNT_PAIRING_GAP_DAYS = 7
 
   desc 'hunt', 'The hawker hunts for prays in different dates'
@@ -42,7 +41,7 @@ class HuntCommand < Thor
     min_prices = {}
 
     search_start_date.upto(search_end_date) do |search_date|
-      api_key, timeout = licenser.get_now_useable_api_key
+      api_key = licenser.get_next_usable_api_key
       if api_key.nil?
         puts "No usable API keys available. You have reached the daily limit for the provided API keys."
         break
@@ -56,7 +55,6 @@ class HuntCommand < Thor
       min_price = overview.nil? ? nil : overview[:outbound][:price]
       min_prices[search_date] = min_price
       puts "[#{request_count}] #{search_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
-      sleep timeout
     end
 
     licenser.persist_request_count
@@ -79,7 +77,7 @@ class HuntCommand < Thor
       abort "No API keys configured. Please add at least one API key in the search_config.json file."
     end
     licenser = Licenser.new(@config[ConfigDefinition::API_KEYS])
-    api_key, _ = licenser.get_now_useable_api_key
+    api_key = licenser.get_next_usable_api_key
     if api_key.nil?
       abort "No usable API keys available. You have reached the daily limit for the provided API keys."
     end

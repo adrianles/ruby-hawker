@@ -3,6 +3,7 @@ require 'httparty'
 require 'json'
 require 'date'
 require 'csv'
+require 'thread'
 
 require_relative 'config_definition'
 require_relative 'applicant'
@@ -38,31 +39,25 @@ class HuntCommand < Thor
         abort "Invalid hunt date range: no searchable dates available with a #{HUNT_PAIRING_GAP_DAYS}-day return pairing gap."
       end
 
-      request_count = 0
-      min_prices = {}
+      search_dates = search_start_date.upto(search_end_date).to_a
+      results, errors = run_async_hunt(timestamp, licenser, search_dates, is_return, verbose)
 
-      search_start_date.upto(search_end_date) do |search_date|
-        api_key = licenser.get_next_usable_api_key
-        if api_key.nil?
-          puts "No usable API keys available. You have reached the daily limit for the provided API keys."
-          break
-        end
-
-        paired_return_date = is_return ? search_date + HUNT_PAIRING_GAP_DAYS : nil
-        file_suffix = "hunt-#{search_date.strftime(OUTPUT_DATE_FORMAT)}"
-        formatted_data = _capture(timestamp, api_key, search_date, is_return, paired_return_date, false, verbose, file_suffix)
-        overview = formatted_data[:overview]
-        request_count += 1
-        min_price = overview.nil? ? nil : overview[:outbound][:price]
-        min_prices[search_date] = min_price
-        puts "[#{request_count}] #{search_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
+      if results.empty? && errors.empty?
+        puts "No usable API keys available. You have reached the daily limit for the provided API keys."
       end
 
+      min_prices = write_hunt_results(timestamp, results)
+      request_count = results.length + errors.length
       puts "request count: #{request_count}"
       write_hunt_min_price_csv(timestamp, get_min_price_csv(get_min_prices_matrix(
         "#{search_config[ConfigDefinition::SEARCH_ORIGIN][ConfigDefinition::SEARCH_STATION_CODE]}-#{search_config[ConfigDefinition::SEARCH_DESTINATION][ConfigDefinition::SEARCH_STATION_CODE]}",
         min_prices,
       )))
+
+      unless errors.empty?
+        error = errors.first
+        abort "Hunt failed for #{error[:date].strftime(OUTPUT_DATE_FORMAT)} with API key #{short_api_key(error[:api_key])}: #{error[:exception].message}"
+      end
     ensure
       licenser.persist_request_count
     end
@@ -118,6 +113,22 @@ class HuntCommand < Thor
     verbose = false,
     file_suffix
   )
+    capture_data = fetch_capture_data(timestamp, api_key, outbound_date, is_return, inbound_date, skip_request, verbose)
+    write_raw_data(timestamp, capture_data[:raw_json], file_suffix)
+    write_output_data(timestamp, capture_data[:formatted_data], file_suffix)
+
+    capture_data[:formatted_data]
+  end
+
+  def fetch_capture_data(
+    timestamp,
+    api_key,
+    outbound_date,
+    is_return = false,
+    inbound_date = nil,
+    skip_request = false,
+    verbose = false
+  )
     @_verbose = verbose
 
     puts_if_verbose 'Preparing the search...'
@@ -142,7 +153,6 @@ class HuntCommand < Thor
     if !skip_request
       applicant = Applicant.new(api_key, currency)
       json_data = applicant.query(origin, destination, outbound_date, is_return, inbound_date)
-      write_raw_data(timestamp, json_data, file_suffix)
     else
       # file = 'data/example/mad-ams-single.json'
       file = 'data/example/par-tyo-return.json'
@@ -169,13 +179,109 @@ class HuntCommand < Thor
       },
       filtered_data,
     )
-    write_output_data(timestamp, formatted_data, file_suffix)
 
     puts_if_verbose "Search completed"
 
-    return formatted_data
+    {
+      raw_json: json_data,
+      formatted_data: formatted_data,
+    }
   rescue => exception
     puts_if_verbose "An error occurred: #{exception.message} \n#{exception.backtrace.join("\n")}"
+    raise
+  end
+
+  def run_async_hunt(timestamp, licenser, search_dates, is_return, verbose)
+    date_queue = Queue.new
+    search_dates.each { |search_date| date_queue << search_date }
+
+    results_queue = Queue.new
+    errors_queue = Queue.new
+    stop_mutex = Mutex.new
+    stop_requested = false
+
+    worker_count = licenser.get_quota_available_api_keys.length
+    workers = worker_count.times.map do
+      Thread.new do
+        loop do
+          should_stop = stop_mutex.synchronize { stop_requested }
+          break if should_stop
+
+          search_date = pop_queue(date_queue)
+          break if search_date.nil?
+
+          api_key = licenser.get_next_balanced_api_key
+          if api_key.nil?
+            date_queue << search_date
+            break
+          end
+
+          begin
+            paired_return_date = is_return ? search_date + HUNT_PAIRING_GAP_DAYS : nil
+            file_suffix = "hunt-#{search_date.strftime(OUTPUT_DATE_FORMAT)}"
+            capture_data = fetch_capture_data(timestamp, api_key, search_date, is_return, paired_return_date, false, verbose)
+            results_queue << {
+              date: search_date,
+              file_suffix: file_suffix,
+              raw_json: capture_data[:raw_json],
+              formatted_data: capture_data[:formatted_data],
+            }
+          rescue Exception => exception
+            errors_queue << {
+              date: search_date,
+              api_key: api_key,
+              exception: exception,
+            }
+            stop_mutex.synchronize { stop_requested = true }
+            break
+          end
+
+          break if date_queue.empty?
+        end
+      end
+    end
+
+    workers.each(&:join)
+
+    [drain_queue(results_queue), drain_queue(errors_queue)]
+  end
+
+  def pop_queue(queue)
+    queue.pop(true)
+  rescue ThreadError
+    nil
+  end
+
+  def drain_queue(queue)
+    values = []
+    loop do
+      value = pop_queue(queue)
+      break if value.nil?
+
+      values << value
+    end
+    values
+  end
+
+  def write_hunt_results(timestamp, results)
+    min_prices = {}
+    sorted_results = results.sort_by { |result| result[:date] }
+
+    sorted_results.each_with_index do |result, index|
+      write_raw_data(timestamp, result[:raw_json], result[:file_suffix])
+      write_output_data(timestamp, result[:formatted_data], result[:file_suffix])
+
+      overview = result[:formatted_data][:overview]
+      min_price = overview.nil? ? nil : overview[:outbound][:price]
+      min_prices[result[:date]] = min_price
+      puts "[#{index + 1}] #{result[:date].strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
+    end
+
+    min_prices
+  end
+
+  def short_api_key(api_key)
+    "#{api_key[0, 4]}...#{api_key[-4, 4]}"
   end
 
   def puts_if_verbose(message)

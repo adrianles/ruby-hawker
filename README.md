@@ -9,7 +9,7 @@ Then Hawker will fetch the information and format it in JSON.
 You only need to obtain an API key from their website by creating a free account.
 The free account is rate limited to 1 request per second and 100 requests per day.
 - The app will atomatically count and stop doing requests once the limit is reached. You can look at the count in the `request_count.json` file.
-- You can configure more than one API keys. The app schedules each key independently, so multiple keys can increase the total requests per second and the daily limit.
+- You can configure more than one API keys. The app runs concurrent `hunt` workers and schedules each key independently, preferring the available key with the lowest daily count so multiple keys can increase speed while keeping usage balanced.
 
 ## Usage
 
@@ -46,3 +46,4 @@ For the `hunt` command, a csv file will be created with the dates and the minimu
 
 TODO tasks:
 - write in per day folder
+- daily price track

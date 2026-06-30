@@ -96,6 +96,8 @@ Config uses station codes only. Use `station.rb` as a Ctrl+F reference for city 
 
 For `hunt`, `return: true` still searches only the configured direction, but sends a return-style API request so the price reflects return-trip pricing. The reverse leg is calculated as `searched_date + HUNT_PAIRING_GAP_DAYS`, currently 7 days, and is not the result being optimized. For `return: false`, `hunt` sends a true one-way request.
 
+`hunt` runs concurrently with one worker thread per quota-available API key. Workers ask `Licenser` for the next key before each request; `Licenser` prefers the currently available key with the lowest daily count so usage stays balanced while preserving speed. Workers fetch and format results, then the main thread writes raw JSON, cleaned JSON, and the summary CSV after workers finish. Request counts are persisted in `ensure` blocks so API errors do not lose consumed quota.
+
 Current output suffixes:
 
 - `hunt`: `hunt-YYYY-MM-DD`

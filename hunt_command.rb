@@ -30,39 +30,42 @@ class HuntCommand < Thor
     end
     licenser = Licenser.new(@config[ConfigDefinition::API_KEYS])
 
-    search_start_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
-    is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
-    search_end_date = get_hunt_end_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE], is_return)
-    if search_end_date < search_start_date
-      abort "Invalid hunt date range: no searchable dates available with a #{HUNT_PAIRING_GAP_DAYS}-day return pairing gap."
-    end
-
-    request_count = 0
-    min_prices = {}
-
-    search_start_date.upto(search_end_date) do |search_date|
-      api_key = licenser.get_next_usable_api_key
-      if api_key.nil?
-        puts "No usable API keys available. You have reached the daily limit for the provided API keys."
-        break
+    begin
+      search_start_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
+      is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
+      search_end_date = get_hunt_end_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE], is_return)
+      if search_end_date < search_start_date
+        abort "Invalid hunt date range: no searchable dates available with a #{HUNT_PAIRING_GAP_DAYS}-day return pairing gap."
       end
 
-      paired_return_date = is_return ? search_date + HUNT_PAIRING_GAP_DAYS : nil
-      file_suffix = "hunt-#{search_date.strftime(OUTPUT_DATE_FORMAT)}"
-      formatted_data = _capture(timestamp, api_key, search_date, is_return, paired_return_date, false, verbose, file_suffix)
-      overview = formatted_data[:overview]
-      request_count += 1
-      min_price = overview.nil? ? nil : overview[:outbound][:price]
-      min_prices[search_date] = min_price
-      puts "[#{request_count}] #{search_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
-    end
+      request_count = 0
+      min_prices = {}
 
-    licenser.persist_request_count
-    puts "request count: #{request_count}"
-    write_hunt_min_price_csv(timestamp, get_min_price_csv(get_min_prices_matrix(
-      "#{search_config[ConfigDefinition::SEARCH_ORIGIN][ConfigDefinition::SEARCH_STATION_CODE]}-#{search_config[ConfigDefinition::SEARCH_DESTINATION][ConfigDefinition::SEARCH_STATION_CODE]}",
-      min_prices,
-    )))
+      search_start_date.upto(search_end_date) do |search_date|
+        api_key = licenser.get_next_usable_api_key
+        if api_key.nil?
+          puts "No usable API keys available. You have reached the daily limit for the provided API keys."
+          break
+        end
+
+        paired_return_date = is_return ? search_date + HUNT_PAIRING_GAP_DAYS : nil
+        file_suffix = "hunt-#{search_date.strftime(OUTPUT_DATE_FORMAT)}"
+        formatted_data = _capture(timestamp, api_key, search_date, is_return, paired_return_date, false, verbose, file_suffix)
+        overview = formatted_data[:overview]
+        request_count += 1
+        min_price = overview.nil? ? nil : overview[:outbound][:price]
+        min_prices[search_date] = min_price
+        puts "[#{request_count}] #{search_date.strftime('%Y-%m-%d')}: #{min_price.nil? ? '-' : min_price}€"
+      end
+
+      puts "request count: #{request_count}"
+      write_hunt_min_price_csv(timestamp, get_min_price_csv(get_min_prices_matrix(
+        "#{search_config[ConfigDefinition::SEARCH_ORIGIN][ConfigDefinition::SEARCH_STATION_CODE]}-#{search_config[ConfigDefinition::SEARCH_DESTINATION][ConfigDefinition::SEARCH_STATION_CODE]}",
+        min_prices,
+      )))
+    ensure
+      licenser.persist_request_count
+    end
   end
 
   desc 'capture', 'The hawker captures a pray in specific dates'
@@ -77,26 +80,30 @@ class HuntCommand < Thor
       abort "No API keys configured. Please add at least one API key in the search_config.json file."
     end
     licenser = Licenser.new(@config[ConfigDefinition::API_KEYS])
-    api_key = licenser.get_next_usable_api_key
-    if api_key.nil?
-      abort "No usable API keys available. You have reached the daily limit for the provided API keys."
+
+    begin
+      api_key = licenser.get_next_usable_api_key
+      if api_key.nil?
+        abort "No usable API keys available. You have reached the daily limit for the provided API keys."
+      end
+
+      outbound_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
+
+      is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
+      inbound_date = nil
+      if is_return
+        inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
+      end
+
+      file_suffix = "capture-#{outbound_date.strftime(OUTPUT_DATE_FORMAT)}"
+      if is_return
+        file_suffix = "#{file_suffix}-#{inbound_date.strftime(OUTPUT_DATE_FORMAT)}"
+      end
+
+      _capture(timestamp, api_key, outbound_date, is_return, inbound_date, false, verbose, file_suffix)
+    ensure
+      licenser.persist_request_count
     end
-
-    outbound_date = get_outbound_date(search_config[ConfigDefinition::SEARCH_OUTBOUND_DATE])
-
-    is_return = search_config[ConfigDefinition::SEARCH_IS_RETURN]
-    inbound_date = nil
-    if is_return
-      inbound_date = get_inbound_date(search_config[ConfigDefinition::SEARCH_INBOUND_DATE])
-    end
-
-    file_suffix = "capture-#{outbound_date.strftime(OUTPUT_DATE_FORMAT)}"
-    if is_return
-      file_suffix = "#{file_suffix}-#{inbound_date.strftime(OUTPUT_DATE_FORMAT)}"
-    end
-
-    _capture(timestamp, api_key, outbound_date, is_return, inbound_date, false, verbose, file_suffix)
-    licenser.persist_request_count
   end
 
   private

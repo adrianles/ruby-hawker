@@ -199,8 +199,13 @@ class HuntCommand < Thor
     errors_queue = Queue.new
     stop_mutex = Mutex.new
     stop_requested = false
+    progress_mutex = Mutex.new
+    completed_count = 0
+    total_count = search_dates.length
 
     worker_count = licenser.get_quota_available_api_keys.length
+    print_hunt_progress(0, total_count) if worker_count.positive? && total_count.positive?
+
     workers = worker_count.times.map do
       Thread.new do
         loop do
@@ -226,12 +231,14 @@ class HuntCommand < Thor
               raw_json: capture_data[:raw_json],
               formatted_data: capture_data[:formatted_data],
             }
+            completed_count = increment_hunt_progress(progress_mutex, completed_count, total_count)
           rescue Exception => exception
             errors_queue << {
               date: search_date,
               api_key: api_key,
               exception: exception,
             }
+            completed_count = increment_hunt_progress(progress_mutex, completed_count, total_count)
             stop_mutex.synchronize { stop_requested = true }
             break
           end
@@ -242,8 +249,29 @@ class HuntCommand < Thor
     end
 
     workers.each(&:join)
+    finish_hunt_progress if worker_count.positive? && total_count.positive?
 
     [drain_queue(results_queue), drain_queue(errors_queue)]
+  end
+
+  def increment_hunt_progress(progress_mutex, completed_count, total_count)
+    progress_mutex.synchronize do
+      completed_count += 1
+      print_hunt_progress(completed_count, total_count)
+      completed_count
+    end
+  end
+
+  def print_hunt_progress(completed_count, total_count)
+    remaining_count = total_count - completed_count
+    percent = total_count.zero? ? 100 : ((completed_count.to_f / total_count) * 100).round
+
+    print "\rSearching [#{completed_count}/#{total_count}] #{percent}% done, #{remaining_count} left"
+    $stdout.flush
+  end
+
+  def finish_hunt_progress
+    puts
   end
 
   def pop_queue(queue)
